@@ -79,10 +79,8 @@ Java_sun_nio_ch_EPollArrayWrapper_init(JNIEnv *env, jclass this)
 JNIEXPORT jint JNICALL
 Java_sun_nio_ch_EPollArrayWrapper_epollCreate(JNIEnv *env, jobject this)
 {
-    /*
-     * epoll_create expects a size as a hint to the kernel about how to
-     * dimension internal structures. We can't predict the size in advance.
-     */
+     // 这里就是调用操作系统内核的epoll_create函数，可以在linux上通过man命令来查看详细信息
+     // 创建一个新的epoll实例，并返回引用该实例的文件描述符
     int epfd = epoll_create(256);
     if (epfd < 0) {
        JNU_ThrowIOExceptionWithLastError(env, "epoll_create failed");

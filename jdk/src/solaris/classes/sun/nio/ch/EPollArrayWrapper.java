@@ -30,23 +30,24 @@ import java.security.AccessController;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Map;
+
 import sun.security.action.GetIntegerAction;
 
 /**
  * Manipulates a native array of epoll_event structs on Linux:
- *
+ * <p>
  * typedef union epoll_data {
- *     void *ptr;
- *     int fd;
- *     __uint32_t u32;
- *     __uint64_t u64;
- *  } epoll_data_t;
- *
+ * void *ptr;
+ * int fd;
+ * __uint32_t u32;
+ * __uint64_t u64;
+ * } epoll_data_t;
+ * <p>
  * struct epoll_event {
- *     __uint32_t events;
- *     epoll_data_t data;
+ * __uint32_t events;
+ * epoll_data_t data;
  * };
- *
+ * <p>
  * The system call to wait for I/O events is epoll_wait(2). It populates an
  * array of epoll_event structures that are passed to the call. The data
  * member of the epoll_event structure contains the same data as was set
@@ -58,35 +59,35 @@ import sun.security.action.GetIntegerAction;
 
 class EPollArrayWrapper {
     // EPOLL_EVENTS
-    private static final int EPOLLIN      = 0x001;
+    private static final int EPOLLIN = 0x001;
 
     // opcodes
-    private static final int EPOLL_CTL_ADD      = 1;
-    private static final int EPOLL_CTL_DEL      = 2;
-    private static final int EPOLL_CTL_MOD      = 3;
+    private static final int EPOLL_CTL_ADD = 1;
+    private static final int EPOLL_CTL_DEL = 2;
+    private static final int EPOLL_CTL_MOD = 3;
 
     // Miscellaneous constants
-    private static final int SIZE_EPOLLEVENT  = sizeofEPollEvent();
-    private static final int EVENT_OFFSET     = 0;
-    private static final int DATA_OFFSET      = offsetofData();
-    private static final int FD_OFFSET        = DATA_OFFSET;
-    private static final int OPEN_MAX         = IOUtil.fdLimit();
-    private static final int NUM_EPOLLEVENTS  = Math.min(OPEN_MAX, 8192);
+    private static final int SIZE_EPOLLEVENT = sizeofEPollEvent();
+    private static final int EVENT_OFFSET = 0;
+    private static final int DATA_OFFSET = offsetofData();
+    private static final int FD_OFFSET = DATA_OFFSET;
+    private static final int OPEN_MAX = IOUtil.fdLimit();
+    private static final int NUM_EPOLLEVENTS = Math.min(OPEN_MAX, 8192);
 
     // Special value to indicate that an update should be ignored
-    private static final byte  KILLED = (byte)-1;
+    private static final byte KILLED = (byte) -1;
 
     // Initial size of arrays for fd registration changes
     private static final int INITIAL_PENDING_UPDATE_SIZE = 64;
 
     // maximum size of updatesLow
     private static final int MAX_UPDATE_ARRAY_SIZE = AccessController.doPrivileged(
-        new GetIntegerAction("sun.nio.ch.maxUpdateArraySize", Math.min(OPEN_MAX, 64*1024)));
+            new GetIntegerAction("sun.nio.ch.maxUpdateArraySize", Math.min(OPEN_MAX, 64 * 1024)));
 
     // The fd of the epoll driver
     private final int epfd;
 
-     // The epoll_event array for results from epoll_wait
+    // The epoll_event array for results from epoll_wait
     private final AllocatedNativeObject pollArray;
 
     // Base address of the epoll_event array
@@ -118,7 +119,7 @@ class EPollArrayWrapper {
     // file descriptors higher than MAX_UPDATE_ARRAY_SIZE (unlimited case at
     // least) then the update is stored in a map.
     private final byte[] eventsLow = new byte[MAX_UPDATE_ARRAY_SIZE];
-    private Map<Integer,Byte> eventsHigh;
+    private Map<Integer, Byte> eventsHigh;
 
     // Used by release and updateRegistrations to track whether a file
     // descriptor is registered with epoll.
@@ -126,7 +127,7 @@ class EPollArrayWrapper {
 
 
     EPollArrayWrapper() throws IOException {
-        // creates the epoll file descriptor
+        // 创建epoll文件描述符
         epfd = epollCreate();
 
         // the epoll_event array passed to epoll_wait
@@ -222,7 +223,7 @@ class EPollArrayWrapper {
             updateDescriptors[updateCount++] = fd;
 
             // events are stored as bytes for efficiency reasons
-            byte b = (byte)mask;
+            byte b = (byte) mask;
             assert (b == mask) && (b != KILLED);
             setUpdateEvents(fd, b, false);
         }
@@ -236,7 +237,7 @@ class EPollArrayWrapper {
         // previous registration.
         synchronized (updateLock) {
             assert !registered.get(fd);
-            setUpdateEvents(fd, (byte)0, true);
+            setUpdateEvents(fd, (byte) 0, true);
         }
     }
 
@@ -267,7 +268,7 @@ class EPollArrayWrapper {
     int poll(long timeout) throws IOException {
         updateRegistrations();
         updated = epollWait(pollArrayAddress, NUM_EPOLLEVENTS, timeout, epfd);
-        for (int i=0; i<updated; i++) {
+        for (int i = 0; i < updated; i++) {
             if (getDescriptor(i) == incomingInterruptFD) {
                 interruptedIndex = i;
                 interrupted = true;
@@ -334,12 +335,40 @@ class EPollArrayWrapper {
         init();
     }
 
+    /**
+     * 当我们在java中执行Selector.open()的时候，最终会调用到该方法(linux系统下)
+     * <p>
+     * 如果要找到该方法对应的C语言实现，那么可以在idea中使用 command_shift+f 快捷键，然后输入EPollArrayWrapper_epollCreate来查找对应的文件
+     *
+     * @return 返回epoll文件描述符
+     */
     private native int epollCreate();
+
+    /**
+     * 当我们在java中执行selector.select()的时候，最终会调用到该方法(linux系统下)
+     * <p>
+     * 如果要找到该方法对应的C语言实现，那么可以在idea中使用 command_shift+f 快捷键，然后输入EPollArrayWrapper_epollCtl来查找对应的文件
+     */
     private native void epollCtl(int epfd, int opcode, int fd, int events);
+
+    /**
+     * 等待文件描述符epfd(就是epoll实例)上的事件
+     *
+     * @param pollAddress
+     * @param numfds
+     * @param timeout
+     * @param epfd
+     * @return
+     * @throws IOException
+     */
     private native int epollWait(long pollAddress, int numfds, long timeout,
                                  int epfd) throws IOException;
+
     private static native int sizeofEPollEvent();
+
     private static native int offsetofData();
+
     private static native void interrupt(int fd);
+
     private static native void init();
 }
