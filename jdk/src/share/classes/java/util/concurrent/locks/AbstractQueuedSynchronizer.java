@@ -699,9 +699,10 @@ public abstract class AbstractQueuedSynchronizer
          * to clear in anticipation of signalling.  It is OK if this
          * fails or if status is changed by waiting thread.
          */
+        //获取wait状态
         int ws = node.waitStatus;
         if (ws < 0)
-            compareAndSetWaitStatus(node, ws, 0);
+            compareAndSetWaitStatus(node, ws, 0); // 将等待状态waitStatus设置为初始值0
 
         /*
          * Thread to unpark is held in successor, which is normally
@@ -709,7 +710,10 @@ public abstract class AbstractQueuedSynchronizer
          * traverse backwards from tail to find the actual
          * non-cancelled successor.
          */
-        Node s = node.next;
+        /**
+         * 若后继结点为空，或状态为CANCEL（已失效），则从尾部往前遍历找到最前的一个处于正常阻塞状态的结点进行唤醒
+         */
+        Node s = node.next; //head.next = Node1 ,thread = T3
         if (s == null || s.waitStatus > 0) {
             s = null;
             for (Node t = tail; t != null && t != node; t = t.prev)
@@ -717,13 +721,19 @@ public abstract class AbstractQueuedSynchronizer
                     s = t;
         }
         if (s != null)
-            LockSupport.unpark(s.thread);
+            LockSupport.unpark(s.thread);//唤醒线程,T3唤醒
     }
 
     /**
      * Release action for shared mode -- signals successor and ensures
      * propagation. (Note: For exclusive mode, release just amounts
      * to calling unparkSuccessor of head if it needs signal.)
+     */
+    /**
+     * 把当前结点设置为SIGNAL或者PROPAGATE
+     * 唤醒head.next(B节点)，B节点唤醒后可以竞争锁，成功后head->B，然后又会唤醒B.next，一直重复直到共享节点都唤醒
+     * head节点状态为SIGNAL，重置head.waitStatus->0，唤醒head节点线程，唤醒后线程去竞争共享锁
+     * head节点状态为0，将head.waitStatus->Node.PROPAGATE传播状态，表示需要将状态向后继节点传播
      */
     private void doReleaseShared() {
         /*
@@ -741,15 +751,27 @@ public abstract class AbstractQueuedSynchronizer
             Node h = head;
             if (h != null && h != tail) {
                 int ws = h.waitStatus;
-                if (ws == Node.SIGNAL) {
+                if (ws == Node.SIGNAL) {//head是SIGNAL状态
+                    /* head状态是SIGNAL，重置head节点waitStatus为0，这里不直接设为Node.PROPAGAT,
+                     * 是因为unparkSuccessor(h)中，如果ws < 0会设置为0，所以ws先设置为0，再设置为PROPAGATE
+                     * 这里需要控制并发，因为入口有setHeadAndPropagate跟release两个，避免两次unpark
+                     */
                     if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
                         continue;            // loop to recheck cases
+                    /* head状态为SIGNAL，且成功设置为0之后,唤醒head.next节点线程
+                     * 此时head、head.next的线程都唤醒了，head.next会去竞争锁，成功后head会指向获取锁的节点，
+                     * 也就是head发生了变化。看最底下一行代码可知，head发生变化后会重新循环，继续唤醒head的下一个节点
+                     */
                     unparkSuccessor(h);
+                    /*
+                     * 如果本身头节点的waitStatus是出于重置状态（waitStatus==0）的，将其设置为“传播”状态。
+                     * 意味着需要将状态向后一个节点传播
+                     */
                 } else if (ws == 0 &&
                         !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
                     continue;                // loop on failed CAS
             }
-            if (h == head)                   // loop if head changed
+            if (h == head)                   //如果head变了，重新循环
                 break;
         }
     }
@@ -761,6 +783,9 @@ public abstract class AbstractQueuedSynchronizer
      *
      * @param node      the node
      * @param propagate the return value from a tryAcquireShared
+     */
+    /**
+     * 把node节点设置成head节点，且Node.waitStatus->Node.PROPAGATE
      */
     private void setHeadAndPropagate(Node node, int propagate) {
         Node h = head; // Record old head for check below
