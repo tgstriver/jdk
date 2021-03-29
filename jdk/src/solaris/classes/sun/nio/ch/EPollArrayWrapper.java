@@ -25,13 +25,13 @@
 
 package sun.nio.ch;
 
+import sun.security.action.GetIntegerAction;
+
 import java.io.IOException;
 import java.security.AccessController;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Map;
-
-import sun.security.action.GetIntegerAction;
 
 /**
  * Manipulates a native array of epoll_event structs on Linux:
@@ -345,13 +345,15 @@ class EPollArrayWrapper {
     private native int epollCreate();
 
     /**
-     * 当我们在java中执行selector.select()的时候，最终会调用到该方法(linux系统下)
+     * 当我们在java中执行socketChannel.register()的时候，最终会调用到该方法(linux系统下)
      * <p>
      * 如果要找到该方法对应的C语言实现，那么可以在idea中使用 command_shift+f 快捷键，然后输入EPollArrayWrapper_epollCtl来查找对应的文件
      */
     private native void epollCtl(int epfd, int opcode, int fd, int events);
 
     /**
+     * 当我们在java中执行selector.select()的时候，最终会调用到该方法(linux系统下)
+     * <p>
      * 等待文件描述符epfd(就是epoll实例)上的事件
      *
      * @param pollAddress

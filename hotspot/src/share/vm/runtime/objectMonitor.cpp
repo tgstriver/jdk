@@ -295,7 +295,7 @@ static volatile int InitDone       = 0 ;
 // Enter support
 
 bool ObjectMonitor::try_enter(Thread* THREAD) {
-  if (THREAD != _owner) {
+  if (THREAD != _owner) { // 如果当前获取监视器锁的线程不是_owner中存放的线程
     if (THREAD->is_lock_owned ((address)_owner)) {
        assert(_recursions == 0, "internal state error");
        _owner = THREAD ;
@@ -307,7 +307,7 @@ bool ObjectMonitor::try_enter(Thread* THREAD) {
       return false;
     }
     return true;
-  } else {
+  } else { // 如果当前获取监视器锁的线程是_owner中存放的线程，那么表示当前线程再次获取锁，则将进入次数加1
     _recursions++;
     return true;
   }
