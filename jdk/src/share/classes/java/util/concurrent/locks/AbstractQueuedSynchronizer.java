@@ -530,10 +530,11 @@ public abstract class AbstractQueuedSynchronizer
          */
         final Node predecessor() throws NullPointerException {
             Node p = prev;
-            if (p == null)
+            if (p == null) {
                 throw new NullPointerException();
-            else
+            } else {
                 return p;
+            }
         }
 
         //空节点，用于标记共享模式
@@ -766,40 +767,21 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
-     * Sets head of queue, and checks if successor may be waiting
-     * in shared mode, if so propagating if either propagate > 0 or
-     * PROPAGATE status was set.
-     *
-     * @param node      the node
-     * @param propagate the return value from a tryAcquireShared
-     */
-    /**
      * 把node节点设置成head节点，且Node.waitStatus->Node.PROPAGATE
      */
     private void setHeadAndPropagate(Node node, int propagate) {
-        Node h = head; // Record old head for check below
-        setHead(node);
-        /*
-         * Try to signal next queued node if:
-         *   Propagation was indicated by caller,
-         *     or was recorded (as h.waitStatus either before
-         *     or after setHead) by a previous operation
-         *     (note: this uses sign-check of waitStatus because
-         *      PROPAGATE status may transition to SIGNAL.)
-         * and
-         *   The next node is waiting in shared mode,
-         *     or we don't know, because it appears null
-         *
-         * The conservatism in both of these checks may cause
-         * unnecessary wake-ups, but only when there are multiple
-         * racing acquires/releases, so most need signals now or soon
-         * anyway.
+        Node h = head; // 记录旧的头节点以便在下面进行检查
+        setHead(node); // 将head指针指向当前节点
+
+        /** 这里有两种情况是需要执行唤醒操作
+         * 1.propagate > 0 表示调用方指明了后继节点需要被唤醒
+         * 2.头节点后面的节点需要被唤醒（waitStatus<0），不论是老的头结点还是新的头结点
          */
-        if (propagate > 0 || h == null || h.waitStatus < 0 ||
-                (h = head) == null || h.waitStatus < 0) {
+        if (propagate > 0 || h == null || h.waitStatus < 0 || (h = head) == null || h.waitStatus < 0) {
             Node s = node.next;
-            if (s == null || s.isShared())
+            if (s == null || s.isShared()) {//node是最后一个节点或者node的后继节点是共享节点
                 doReleaseShared();
+            }
         }
     }
 
@@ -1018,20 +1000,21 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
-     * Acquires in shared uninterruptible mode.
+     * 尝试以非中断模式获取共享锁
      *
      * @param arg the acquire argument
      */
     private void doAcquireShared(int arg) {
-        final Node node = addWaiter(Node.SHARED);
+        final Node node = addWaiter(Node.SHARED); // 将当前线程以共享模式到同步队列中排队并返回当前节点
         boolean failed = true;
+
         try {
             boolean interrupted = false;
             for (; ; ) {
-                final Node p = node.predecessor();
-                if (p == head) {
+                final Node p = node.predecessor();//前驱节点
+                if (p == head) { // 如果当前节点的前驱节点是头节点，那么就再次尝试获取锁
                     int r = tryAcquireShared(arg);
-                    if (r >= 0) {
+                    if (r >= 0) { // 当前线程获取到了共享资源
                         setHeadAndPropagate(node, r);
                         p.next = null; // help GC
                         if (interrupted)
@@ -1040,13 +1023,15 @@ public abstract class AbstractQueuedSynchronizer
                         return;
                     }
                 }
+
                 if (shouldParkAfterFailedAcquire(p, node) &&
                         parkAndCheckInterrupt())
                     interrupted = true;
             }
         } finally {
-            if (failed)
+            if (failed) {
                 cancelAcquire(node);
+            }
         }
     }
 
@@ -1361,8 +1346,11 @@ public abstract class AbstractQueuedSynchronizer
      *            and can represent anything you like.
      */
     public final void acquireShared(int arg) {
-        if (tryAcquireShared(arg) < 0)
+        // 如果返回值小于0，则表示获取同步状态失败(比如当前可用资源数为3，但是线程需要获取资源数为4)，则进行排队
+        // 如果获取同步状态成功，那么就直接返回去干自己的事情
+        if (tryAcquireShared(arg) < 0) {
             doAcquireShared(arg);
+        }
     }
 
     /**
@@ -1724,10 +1712,13 @@ public abstract class AbstractQueuedSynchronizer
      * @return true if is reacquiring
      */
     final boolean isOnSyncQueue(Node node) {
-        if (node.waitStatus == Node.CONDITION || node.prev == null)
+        if (node.waitStatus == Node.CONDITION || node.prev == null) {
             return false;
-        if (node.next != null) // If has successor, it must be on queue
+        }
+
+        if (node.next != null) { // If has successor, it must be on queue
             return true;
+        }
         /*
          * node.prev can be non-null, but not yet on queue because
          * the CAS to place it on queue can fail. So we have to
@@ -1748,10 +1739,14 @@ public abstract class AbstractQueuedSynchronizer
     private boolean findNodeFromTail(Node node) {
         Node t = tail;
         for (; ; ) {
-            if (t == node)
+            if (t == node) {
                 return true;
-            if (t == null)
+            }
+
+            if (t == null) {
                 return false;
+            }
+
             t = t.prev;
         }
     }
@@ -1825,8 +1820,9 @@ public abstract class AbstractQueuedSynchronizer
                 throw new IllegalMonitorStateException();
             }
         } finally {
-            if (failed)
+            if (failed) {
                 node.waitStatus = Node.CANCELLED;
+            }
         }
     }
 
@@ -1945,9 +1941,8 @@ public abstract class AbstractQueuedSynchronizer
         // Internal methods
 
         /**
-         * Adds a new waiter to wait queue.
-         *
-         * @return its new wait node
+         * 1.与同步队列不同，条件队列头尾指针是firstWaiter跟lastWaiter
+         * 2.条件队列是在获取锁之后，也就是临界区进行操作，因此很多地方不用考虑并发
          */
         private Node addConditionWaiter() {
             Node t = lastWaiter;
@@ -1956,11 +1951,14 @@ public abstract class AbstractQueuedSynchronizer
                 unlinkCancelledWaiters();
                 t = lastWaiter;
             }
+
+            //创建一个类型为CONDITION的节点并加入队列，由于在临界区，所以这里不用并发控制，条件队列是一个单向链表
             Node node = new Node(Thread.currentThread(), Node.CONDITION);
-            if (t == null)
+            if (t == null) {
                 firstWaiter = node;
-            else
+            } else {
                 t.nextWaiter = node;
+            }
             lastWaiter = node;
             return node;
         }
@@ -2139,22 +2137,33 @@ public abstract class AbstractQueuedSynchronizer
          * </ol>
          */
         public final void await() throws InterruptedException {
-            if (Thread.interrupted())
+            if (Thread.interrupted()) {//如果当前线程被中断则直接抛出异常
                 throw new InterruptedException();
-            Node node = addConditionWaiter();
-            int savedState = fullyRelease(node);
-            int interruptMode = 0;
-            while (!isOnSyncQueue(node)) {
-                LockSupport.park(this);
-                if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
-                    break;
             }
-            if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
+
+            Node node = addConditionWaiter();//把当前节点加入条件队列
+            int savedState = fullyRelease(node); //释放掉已经获取的独占锁资源
+            int interruptMode = 0;
+
+            while (!isOnSyncQueue(node)) {//如果不在同步队列中则阻塞当前线程，因为只有在同步队列中才能获取锁
+                LockSupport.park(this);
+                //这里被唤醒可能是正常的signal操作也可能是中断
+                if ((interruptMode = checkInterruptWhileWaiting(node)) != 0) {
+                    break;
+                }
+            }
+
+            if (acquireQueued(node, savedState) && interruptMode != THROW_IE) {
                 interruptMode = REINTERRUPT;
-            if (node.nextWaiter != null) // clean up if cancelled
+            }
+
+            if (node.nextWaiter != null) { // clean up if cancelled
                 unlinkCancelledWaiters();
-            if (interruptMode != 0)
+            }
+
+            if (interruptMode != 0) {
                 reportInterruptAfterWait(interruptMode);
+            }
         }
 
         /**
