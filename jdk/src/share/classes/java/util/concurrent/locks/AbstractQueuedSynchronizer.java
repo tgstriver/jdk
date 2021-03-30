@@ -806,7 +806,7 @@ public abstract class AbstractQueuedSynchronizer
     // Utilities for various versions of acquire
 
     /**
-     * Cancels an ongoing attempt to acquire.
+     * 终结掉正在尝试去获取锁的节点
      *
      * @param node the node
      */
@@ -816,9 +816,9 @@ public abstract class AbstractQueuedSynchronizer
             return;
         }
 
-        node.thread = null;
+        node.thread = null; // 取消节点对Thread对象的引用，用来帮助gc
 
-        // Skip cancelled predecessors
+        // 跳过已经被取消的节点
         Node pred = node.prev;
         while (pred.waitStatus > 0) {
             node.prev = pred = pred.prev;
@@ -834,21 +834,21 @@ public abstract class AbstractQueuedSynchronizer
         // Before, we are free of interference from other threads.
         node.waitStatus = Node.CANCELLED;
 
-        // If we are the tail, remove ourselves.
+        // 如果当前节点是尾节点，那么就把自己移除，并且重新设置尾节点
         if (node == tail && compareAndSetTail(node, pred)) {
-            compareAndSetNext(pred, predNext, null);
+            compareAndSetNext(pred, predNext, null); // 干掉对已经取消的节点的next指针引用
         } else {
-            // If successor needs signal, try to set pred's next-link
-            // so it will get one. Otherwise wake it up to propagate.
             int ws;
+            // 如果当前节点是位于链表的中间节点
             if (pred != head &&
                     ((ws = pred.waitStatus) == Node.SIGNAL ||
                             (ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) &&
                     pred.thread != null) {
                 Node next = node.next;
-                if (next != null && next.waitStatus <= 0)
+                if (next != null && next.waitStatus <= 0) {
                     compareAndSetNext(pred, predNext, next);
-            } else {
+                }
+            } else { // 如果当前节点是头节点，则唤醒该节点的后继节点
                 unparkSuccessor(node);
             }
 
@@ -892,7 +892,7 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
-     * Convenience method to interrupt current thread.
+     * 中断当前线程
      */
     static void selfInterrupt() {
         Thread.currentThread().interrupt();
@@ -950,14 +950,14 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
-     * Acquires in exclusive interruptible mode.
+     * 与acquireQueued逻辑相似，唯一区别是节点还不在队列当中需要先进行入队操作
      *
      * @param arg the acquire argument
      */
-    private void doAcquireInterruptibly(int arg)
-            throws InterruptedException {
-        final Node node = addWaiter(Node.EXCLUSIVE);
+    private void doAcquireInterruptibly(int arg) throws InterruptedException {
+        final Node node = addWaiter(Node.EXCLUSIVE);//以独占模式放入队列尾部
         boolean failed = true;
+
         try {
             for (; ; ) {
                 final Node p = node.predecessor();
@@ -967,13 +967,15 @@ public abstract class AbstractQueuedSynchronizer
                     failed = false;
                     return;
                 }
-                if (shouldParkAfterFailedAcquire(p, node) &&
-                        parkAndCheckInterrupt())
+
+                if (shouldParkAfterFailedAcquire(p, node) && parkAndCheckInterrupt()) {
                     throw new InterruptedException();
+                }
             }
         } finally {
-            if (failed)
+            if (failed) { // 执行这里只有一种情况，那就是在同步队列中等待获取锁的线程被中断了，那么需要将这些线程所在的节点从同步队列中移除
                 cancelAcquire(node);
+            }
         }
     }
 
@@ -1272,7 +1274,7 @@ public abstract class AbstractQueuedSynchronizer
      */
     public final void acquire(int arg) {
         if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) {
-            selfInterrupt();
+            selfInterrupt(); // 如果当前线程是被中断唤醒的，那么把当前线程再中断一次，目的是为了外部的程序能够获取到中断标识
         }
     }
 
@@ -1290,12 +1292,14 @@ public abstract class AbstractQueuedSynchronizer
      *            can represent anything you like.
      * @throws InterruptedException if the current thread is interrupted
      */
-    public final void acquireInterruptibly(int arg)
-            throws InterruptedException {
-        if (Thread.interrupted())
+    public final void acquireInterruptibly(int arg) throws InterruptedException {
+        if (Thread.interrupted()) {
             throw new InterruptedException();
-        if (!tryAcquire(arg))
+        }
+
+        if (!tryAcquire(arg)) {
             doAcquireInterruptibly(arg);
+        }
     }
 
     /**
